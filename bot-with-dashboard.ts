@@ -25,14 +25,33 @@ import { addSession, createSessionFromState, type TradeRecord } from './src/dash
 // ============================================================================
 // CRYPTO INITIALIZATION (Fix for Railway/Node.js environments)
 // ============================================================================
-// Ensure crypto.subtle is available for ethers.Wallet signing
-// This fixes "Cannot read properties of undefined (reading 'subtle')" errors
 import crypto from 'node:crypto';
 if (typeof globalThis.crypto === 'undefined') {
   (globalThis as any).crypto = crypto;
 }
 if (!globalThis.crypto.subtle && (crypto as any).webcrypto) {
   (globalThis.crypto as any).subtle = (crypto as any).webcrypto.subtle;
+}
+
+// ============================================================================
+// PROXY SUPPORT (Fix for Cloudflare blocking on Railway/cloud hosts)
+// ============================================================================
+// Set PROXY_URL in Railway env vars, e.g.:
+//   PROXY_URL=http://username:password@host:port
+// Bright Data format: http://brd-customer-XXXX-zone-XXXX:password@brd.superproxy.io:22225
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import http from 'node:http';
+import https from 'node:https';
+
+if (process.env.PROXY_URL) {
+  const proxyUrl = process.env.PROXY_URL;
+  const agent = new HttpsProxyAgent(proxyUrl);
+
+  // Override default http/https agents globally so ALL requests use the proxy
+  (http as any).globalAgent = agent;
+  (https as any).globalAgent = agent;
+
+  console.log(`🌐 Proxy configured: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
 }
 
 // ============================================================================

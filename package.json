@@ -59,6 +59,7 @@
     "bottleneck": "^2.19.5",
     "dotenv": "^17.2.3",
     "ethers": "5",
+    "https-proxy-agent": "^7.0.6",
     "isomorphic-ws": "^5.0.0",
     "ws": "^8.18.3"
   },
