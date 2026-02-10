@@ -36,38 +36,24 @@ if (!globalThis.crypto.subtle && (crypto as any).webcrypto) {
 // ============================================================================
 // PROXY SUPPORT (Fix for Cloudflare blocking on Railway/cloud hosts)
 // ============================================================================
-// Reads from HTTPS_PROXY, HTTP_PROXY, or PROXY_URL env vars
-// Only routes clob.polymarket.com through proxy, NOT RPC calls
-// Bright Data format: http://brd-customer-XXXX-zone-XXXX:password@brd.superproxy.io:33335
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import https from 'node:https';
+// HTTPS_PROXY env var is auto-read by axios (used by @polymarket/clob-client).
+// We set NO_PROXY to exclude RPC endpoints so balance reads bypass the proxy.
+if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
+  // Exclude RPC endpoints from proxy - these should connect directly
+  const rpcHosts = [
+    'polygon-rpc.com',
+    'rpc.ankr.com',
+    'polygon-mainnet.g.alchemy.com',
+    'rpc-mainnet.maticvigil.com',
+    'polygon.llamarpc.com',
+    'localhost',
+    '127.0.0.1',
+  ].join(',');
+  process.env.NO_PROXY = (process.env.NO_PROXY ? process.env.NO_PROXY + ',' : '') + rpcHosts;
 
-const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.PROXY_URL;
-if (proxyUrl) {
-  const proxyAgent = new HttpsProxyAgent(proxyUrl);
-
-  // Intercept axios requests to route only clob.polymarket.com through proxy
-  // This avoids routing RPC calls through the proxy (which causes 502 errors)
-  const originalHttpsRequest = https.request;
-  (https as any).request = function(url: any, options: any, callback: any) {
-    // If this is a clob.polymarket.com request, use the proxy agent
-    const hostname = typeof url === 'string' 
-      ? new URL(url).hostname 
-      : url.hostname;
-    
-    if (hostname === 'clob.polymarket.com') {
-      if (typeof options === 'function') {
-        callback = options;
-        options = {};
-      }
-      options = options || {};
-      options.agent = proxyAgent;
-    }
-    
-    return originalHttpsRequest.call(this, url, options, callback);
-  };
-
-  console.log(`🌐 Proxy configured for clob.polymarket.com: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
+  const displayUrl = (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').replace(/:[^:@]+@/, ':***@');
+  console.log(`🌐 Proxy active: ${displayUrl}`);
+  console.log(`🌐 NO_PROXY: ${process.env.NO_PROXY}`);
 }
 
 // ============================================================================
