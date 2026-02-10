@@ -27,13 +27,12 @@ import { addSession, createSessionFromState, type TradeRecord } from './src/dash
 // ============================================================================
 // Ensure crypto.subtle is available for ethers.Wallet signing
 // This fixes "Cannot read properties of undefined (reading 'subtle')" errors
+import crypto from 'node:crypto';
 if (typeof globalThis.crypto === 'undefined') {
-  const crypto = require('crypto');
   (globalThis as any).crypto = crypto;
 }
-if (!globalThis.crypto.subtle) {
-  const crypto = require('crypto');
-  (globalThis.crypto as any).subtle = crypto.webcrypto.subtle;
+if (!globalThis.crypto.subtle && (crypto as any).webcrypto) {
+  (globalThis.crypto as any).subtle = (crypto as any).webcrypto.subtle;
 }
 
 // ============================================================================
