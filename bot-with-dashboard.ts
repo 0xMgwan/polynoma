@@ -23,6 +23,20 @@ import type { BotState, BotConfig, LogLevel, DipArbSignal, SmartMoneySignal } fr
 import { addSession, createSessionFromState, type TradeRecord } from './src/dashboard/session-history.js';
 
 // ============================================================================
+// CRYPTO INITIALIZATION (Fix for Railway/Node.js environments)
+// ============================================================================
+// Ensure crypto.subtle is available for ethers.Wallet signing
+// This fixes "Cannot read properties of undefined (reading 'subtle')" errors
+if (typeof globalThis.crypto === 'undefined') {
+  const crypto = require('crypto');
+  (globalThis as any).crypto = crypto;
+}
+if (!globalThis.crypto.subtle) {
+  const crypto = require('crypto');
+  (globalThis.crypto as any).subtle = crypto.webcrypto.subtle;
+}
+
+// ============================================================================
 // CONFIGURATION (same as bot-config.ts)
 // ============================================================================
 
