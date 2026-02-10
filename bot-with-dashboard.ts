@@ -37,20 +37,37 @@ if (!globalThis.crypto.subtle && (crypto as any).webcrypto) {
 // PROXY SUPPORT (Fix for Cloudflare blocking on Railway/cloud hosts)
 // ============================================================================
 // Reads from HTTPS_PROXY, HTTP_PROXY, or PROXY_URL env vars
+// Only routes clob.polymarket.com through proxy, NOT RPC calls
 // Bright Data format: http://brd-customer-XXXX-zone-XXXX:password@brd.superproxy.io:33335
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import http from 'node:http';
 import https from 'node:https';
 
 const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.PROXY_URL;
 if (proxyUrl) {
-  const agent = new HttpsProxyAgent(proxyUrl);
+  const proxyAgent = new HttpsProxyAgent(proxyUrl);
 
-  // Override default http/https agents globally so ALL requests use the proxy
-  (http as any).globalAgent = agent;
-  (https as any).globalAgent = agent;
+  // Intercept axios requests to route only clob.polymarket.com through proxy
+  // This avoids routing RPC calls through the proxy (which causes 502 errors)
+  const originalHttpsRequest = https.request;
+  (https as any).request = function(url: any, options: any, callback: any) {
+    // If this is a clob.polymarket.com request, use the proxy agent
+    const hostname = typeof url === 'string' 
+      ? new URL(url).hostname 
+      : url.hostname;
+    
+    if (hostname === 'clob.polymarket.com') {
+      if (typeof options === 'function') {
+        callback = options;
+        options = {};
+      }
+      options = options || {};
+      options.agent = proxyAgent;
+    }
+    
+    return originalHttpsRequest.call(this, url, options, callback);
+  };
 
-  console.log(`🌐 Proxy configured: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
+  console.log(`🌐 Proxy configured for clob.polymarket.com: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
 }
 
 // ============================================================================
