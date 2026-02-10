@@ -667,6 +667,7 @@ export class DipArbService extends EventEmitter {
           executionTimeMs: execTimeMs,
         };
       } else {
+        this.log(`❌ Leg1 FAILED: All ${splitCount} orders failed`);
         return {
           success: false,
           leg: 'leg1',
@@ -676,11 +677,13 @@ export class DipArbService extends EventEmitter {
         };
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.log(`❌ Leg1 EXCEPTION: ${errorMsg}`);
       return {
         success: false,
         leg: 'leg1',
         roundId: signal.roundId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMsg,
         executionTimeMs: Date.now() - startTime,
       };
     } finally {
@@ -829,6 +832,7 @@ export class DipArbService extends EventEmitter {
           executionTimeMs: Date.now() - startTime,
         };
       } else {
+        this.log(`❌ Leg2 FAILED: All ${splitCount} orders failed`);
         return {
           success: false,
           leg: 'leg2',
@@ -838,6 +842,8 @@ export class DipArbService extends EventEmitter {
         };
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.log(`❌ Leg2 EXCEPTION: ${errorMsg}`);
       return {
         success: false,
         leg: 'leg2',
