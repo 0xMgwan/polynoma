@@ -886,9 +886,8 @@ async function updateBalances() {
 
     // Only verify once/log sparsely
     if (Math.random() < 0.05) { // Occasional log
-      // no-op
+      log('SWAP', 'Simulated balances updated');
     }
-    updateDashboard();
     return;
   }
 
@@ -896,6 +895,12 @@ async function updateBalances() {
   try {
     const balances = await swapService.getBalances();
     let changed = false;
+
+    // Debug: Log what tokens we found
+    const tokenSymbols = balances.map(b => b.symbol).join(', ');
+    if (tokenSymbols !== 'MATIC,USDC,USDC_E,USDT,DAI,WETH,WMATIC') {
+      log('SWAP', `Available tokens: ${tokenSymbols}`);
+    }
 
     // Parse balances from TokenBalance array
     for (const b of balances) {
@@ -909,17 +914,20 @@ async function updateBalances() {
       }
       if (b.symbol === 'USDC_E') {
         const val = parseFloat(b.balance);
-        if (state.usdcEBalance !== val) { state.usdcEBalance = val; changed = true; }
+        if (state.usdcEBalance !== val) { 
+          state.usdcEBalance = val; 
+          changed = true;
+          // Log when USDC.e balance changes
+          log('SWAP', `USDC.e balance updated: $${val.toFixed(2)}`);
+        }
       }
     }
 
     if (changed) {
       updateDashboard();
-      // Optional: Log only on significant changes or debug
-      // log('SWAP', 'Balances updated');
     }
   } catch (err) {
-    // Silent fail on interval to avoid log spam
+    log('WARN', `Balance update error: ${(err as Error).message}`);
   }
 }
 

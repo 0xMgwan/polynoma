@@ -478,8 +478,9 @@ export class SwapService {
           balance: ethers.utils.formatUnits(balance, decimals),
           decimals,
         });
-      } catch {
-        // Skip if token query fails
+      } catch (err) {
+        // Log which token failed and why
+        console.warn(`SwapService: Failed to get ${tokenSymbol} balance: ${(err as Error).message}`);
       }
     }
 
