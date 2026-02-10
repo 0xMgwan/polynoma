@@ -899,13 +899,31 @@ export class DipArbService extends EventEmitter {
         noTokenId: this.market.downTokenId,
       };
 
-      this.log(`🔄 Merging ${shares.toFixed(1)} UP + DOWN → USDC.e...`);
+      // Wait for token settlement before merging
+      // Polymarket orders need time to settle on-chain
+      const SETTLE_DELAY_MS = 10_000; // 10 seconds
+      const MAX_RETRIES = 3;
 
-      const result = await this.ctf.mergeByTokenIds(
-        this.market.conditionId,
-        tokenIds,
-        shares.toString()
-      );
+      this.log(`🔄 Waiting ${SETTLE_DELAY_MS / 1000}s for token settlement before merge...`);
+      await new Promise(resolve => setTimeout(resolve, SETTLE_DELAY_MS));
+
+      let result: any = { success: false };
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        this.log(`🔄 Merge attempt ${attempt}/${MAX_RETRIES}: ${shares.toFixed(1)} UP + DOWN → USDC.e...`);
+
+        result = await this.ctf.mergeByTokenIds(
+          this.market.conditionId,
+          tokenIds,
+          shares.toString()
+        );
+
+        if (result.success) break;
+
+        if (attempt < MAX_RETRIES) {
+          this.log(`⏳ Merge attempt ${attempt} failed, waiting 10s before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 10_000));
+        }
+      }
 
       if (result.success) {
         this.log(`✅ Merge successful: ${shares.toFixed(1)} pairs → $${result.usdcReceived || shares.toFixed(2)} USDC.e`);
