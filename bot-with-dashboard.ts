@@ -61,7 +61,7 @@ let CONFIG = {
   },
 
   smartMoney: {
-    enabled: process.env.SMARTMONEY_ENABLED !== 'false',
+    enabled: false,  // Disabled - only Arbitrage + DipArb active
     topN: 20,
     // 🔴 FIXED: Stricter criteria (v3.1)
     minWinRate: 0.60,  // Up from 0.70 to match bot-config (60%+)
@@ -125,7 +125,7 @@ let CONFIG = {
   },
 
   directTrading: {
-    enabled: false,
+    enabled: false,  // Disabled - only Arbitrage + DipArb active
     trendFollowing: true,
     minTrendStrength: 0.02,
     // 🔴 NEW: Stop-loss and take-profit
@@ -447,12 +447,54 @@ async function initializeSmartMoney(sdk: PolymarketSDK) {
 
         // EXECUTION LOGIC
         if (CONFIG.dryRun) {
-          // ... execution
           simulateTrade(0, 'smartMoney', `Smart Money Copy: ${trade.side} ${trade.size} shares @ ${trade.price}`);
         } else {
-          // ... live execution
-          // simplified placeholder from original file
-          // ...
+          // LIVE EXECUTION - Place actual trade
+          try {
+            // Calculate copy size based on config
+            let copySize = trade.size * CONFIG.smartMoney.sizeScale;
+            const copyValue = copySize * trade.price;
+
+            // Enforce max size per trade
+            if (copyValue > CONFIG.smartMoney.maxSizePerTrade) {
+              copySize = CONFIG.smartMoney.maxSizePerTrade / trade.price;
+            }
+
+            // Skip if too small
+            if (copyValue < CONFIG.capital.minOrderUsd) {
+              return;
+            }
+
+            // Price with slippage
+            const slippagePrice = trade.side === 'BUY'
+              ? trade.price * (1 + CONFIG.smartMoney.maxSlippage)
+              : trade.price * (1 - CONFIG.smartMoney.maxSlippage);
+
+            // Skip if no tokenId
+            if (!trade.tokenId) {
+              return;
+            }
+
+            // Execute trade
+            const result = await sdk.tradingService.createMarketOrder({
+              tokenId: trade.tokenId,
+              side: trade.side,
+              amount: copyValue,
+              price: slippagePrice,
+              orderType: 'FOK',
+            });
+
+            if (result.success) {
+              log('TRADE', `✅ Smart Money Copy Executed: ${trade.side} ${copySize.toFixed(2)} shares @ ${trade.price.toFixed(4)}`);
+              recordTrade(0, 'smartMoney');
+              state.smartMoneyTrades++;
+            } else {
+              log('WARN', `❌ Smart Money Copy Failed: ${result.errorMsg}`);
+            }
+            updateDashboard();
+          } catch (err) {
+            log('WARN', `Smart Money execution error: ${(err as Error).message}`);
+          }
         }
       });
   }
@@ -512,31 +554,42 @@ async function setupArbitrage(_sdk: PolymarketSDK) {
 
   // Scan for arbitrage opportunities ONLY if enabled
   if (CONFIG.arbitrage.enabled) {
-    state.arbitrage.status = 'scanning';
-    try {
-      const results = await arbService.scanMarkets(
-        { minVolume24h: CONFIG.arbitrage.minVolume24h },
-        CONFIG.arbitrage.profitThreshold
-      );
-      state.arbitrage.marketsScanned = results.length;
-      const opps = results.filter(r => r.arbType !== 'none');
+    async function scanAndStartArb() {
+      if (arbService!.isActive()) return; // Already monitoring a market
 
-      if (opps.length > 0) {
-        state.activeArbMarket = opps[0].market.name;
-        state.arbitrage.currentMarket = opps[0].market.name;
-        state.arbitrage.status = 'monitoring';
-        await arbService.start(opps[0].market);
-        log('ARB', `Started monitoring: ${opps[0].market.name}`);
-      } else {
+      state.arbitrage.status = 'scanning';
+      updateDashboard();
+      try {
+        const results = await arbService!.scanMarkets(
+          { minVolume24h: CONFIG.arbitrage.minVolume24h },
+          CONFIG.arbitrage.profitThreshold
+        );
+        state.arbitrage.marketsScanned = results.length;
+        const opps = results.filter(r => r.arbType !== 'none');
+
+        if (opps.length > 0) {
+          state.activeArbMarket = opps[0].market.name;
+          state.arbitrage.currentMarket = opps[0].market.name;
+          state.arbitrage.status = 'monitoring';
+          await arbService!.start(opps[0].market);
+          log('ARB', `Started monitoring: ${opps[0].market.name} (+${opps[0].profitPercent.toFixed(2)}%)`);
+        } else {
+          state.arbitrage.status = 'idle';
+          log('ARB', `Scanned ${results.length} markets - no arb opportunities yet`);
+        }
+        updateDashboard();
+      } catch (err) {
         state.arbitrage.status = 'idle';
-        log('ARB', 'No arbitrage opportunities found, will keep scanning...');
+        log('WARN', `Arbitrage scan error: ${(err as Error).message}`);
+        updateDashboard();
       }
-      updateDashboard();
-    } catch (err) {
-      state.arbitrage.status = 'idle';
-      log('WARN', `Arbitrage scan error: ${(err as Error).message}`);
-      updateDashboard();
     }
+
+    // Initial scan
+    await scanAndStartArb();
+
+    // Re-scan every 60 seconds if not already monitoring
+    setInterval(scanAndStartArb, 60_000);
   }
 }
 
@@ -685,6 +738,103 @@ async function setupDipArb(sdk: PolymarketSDK) {
   }
 }
 
+// ============================================================================
+// v4.0: REST API POLLING FALLBACK
+// Polymarket deprecated clob_market WebSocket - poll orderbooks via REST API
+// ============================================================================
+
+async function startOrderbookPolling(sdk: PolymarketSDK) {
+  log('INFO', '📡 Starting REST API orderbook polling (WebSocket fallback)...');
+
+  const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds
+
+  async function pollDipArbOrderbook() {
+    if (!CONFIG.dipArb.enabled) return;
+
+    const market = sdk.dipArb.getMarket();
+    if (!market) return;
+
+    try {
+      const upBook = await sdk.markets.getTokenOrderbook(market.upTokenId);
+      const downBook = await sdk.markets.getTokenOrderbook(market.downTokenId);
+
+      const now = Date.now();
+
+      // Feed UP token orderbook into DipArb
+      sdk.dipArb.handleOrderbookUpdate({
+        tokenId: market.upTokenId,
+        assetId: market.upTokenId,
+        market: market.conditionId,
+        asks: upBook.asks,
+        bids: upBook.bids,
+        hash: `poll_${now}`,
+        tickSize: '0.01',
+        minOrderSize: '1',
+        timestamp: now,
+      } as any);
+
+      // Feed DOWN token orderbook into DipArb
+      sdk.dipArb.handleOrderbookUpdate({
+        tokenId: market.downTokenId,
+        assetId: market.downTokenId,
+        market: market.conditionId,
+        asks: downBook.asks,
+        bids: downBook.bids,
+        hash: `poll_${now}`,
+        tickSize: '0.01',
+        minOrderSize: '1',
+        timestamp: now,
+      } as any);
+    } catch (err) {
+      // Silently retry on next poll
+    }
+  }
+
+  async function pollArbOrderbook() {
+    if (!CONFIG.arbitrage.enabled || !arbService) return;
+
+    const arbMarket = arbService.getMarket();
+    if (!arbMarket) return;
+
+    try {
+      const yesBook = await sdk.markets.getTokenOrderbook(arbMarket.yesTokenId);
+      const noBook = await sdk.markets.getTokenOrderbook(arbMarket.noTokenId);
+
+      const now = Date.now();
+
+      // Feed YES token orderbook into Arbitrage
+      arbService.handleBookUpdate({
+        assetId: arbMarket.yesTokenId,
+        bids: yesBook.bids,
+        asks: yesBook.asks,
+        timestamp: now,
+      } as any);
+
+      // Feed NO token orderbook into Arbitrage
+      arbService.handleBookUpdate({
+        assetId: arbMarket.noTokenId,
+        bids: noBook.bids,
+        asks: noBook.asks,
+        timestamp: now,
+      } as any);
+    } catch (err) {
+      // Silently retry on next poll
+    }
+  }
+
+  // Start polling loops
+  setInterval(async () => {
+    await pollDipArbOrderbook();
+    await pollArbOrderbook();
+  }, POLL_INTERVAL_MS);
+
+  // Initial poll
+  await pollDipArbOrderbook();
+  await pollArbOrderbook();
+
+  log('INFO', '📡 Orderbook polling active (every 3s)');
+}
+
 let swapService: SwapService | null = null;
 
 async function updateBalances() {
@@ -776,7 +926,7 @@ async function setupOnchain() {
 
     const onchain = new OnchainService({
       privateKey: process.env.POLYMARKET_PRIVATE_KEY,
-      rpcUrl: 'https://polygon-rpc.com',
+      rpcUrl: 'https://rpc.ankr.com/polygon',
     });
 
     if (CONFIG.onchain.autoApprove) {
@@ -1147,6 +1297,9 @@ async function main() {
 
   // Setup Direct Trading
   await setupDirectTrading(sdk);
+
+  // v4.0: Start REST API orderbook polling (WebSocket fallback)
+  await startOrderbookPolling(sdk);
 
   // Setup Portfolio Manager (Persistence)
   await setupPortfolioManager(sdk);

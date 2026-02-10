@@ -459,6 +459,13 @@ export class ArbitrageService extends EventEmitter {
   }
 
   /**
+   * Get current market config
+   */
+  getMarket(): ArbitrageMarketConfig | null {
+    return this.market;
+  }
+
+  /**
    * Get current orderbook state
    */
   getOrderbook(): OrderbookState {
@@ -1250,7 +1257,7 @@ export class ArbitrageService extends EventEmitter {
 
   // ===== Private Methods =====
 
-  private handleBookUpdate(update: BookUpdate): void {
+  public handleBookUpdate(update: BookUpdate): void {
     if (!this.market) return;
 
     const { assetId, bids, asks } = update;

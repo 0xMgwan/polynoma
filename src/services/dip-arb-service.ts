@@ -929,7 +929,7 @@ export class DipArbService extends EventEmitter {
 
   // ===== Private: Event Handlers =====
 
-  private handleOrderbookUpdate(book: OrderbookSnapshot): void {
+  public handleOrderbookUpdate(book: OrderbookSnapshot): void {
     if (!this.market) return;
 
     // Determine which side this update is for
