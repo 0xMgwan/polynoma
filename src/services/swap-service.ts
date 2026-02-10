@@ -156,7 +156,7 @@ export class SwapService {
 
   constructor(signer: ethers.Wallet) {
     // Use signer's provider if available, otherwise create a default Polygon provider
-    this.provider = signer.provider || new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+    this.provider = signer.provider || new ethers.providers.JsonRpcProvider('https://rpc.ankr.com/polygon');
     // Ensure signer is connected to the provider
     this.signer = signer.provider ? signer : signer.connect(this.provider);
     this.router = new Contract(QUICKSWAP_ROUTER, QUICKSWAP_ROUTER_ABI, this.signer);
@@ -464,8 +464,8 @@ export class SwapService {
       decimals: 18,
     });
 
-    // Get ERC20 balances
-    const tokens = ['USDC', 'USDC_E', 'USDT', 'DAI', 'WETH', 'WMATIC'];
+    // Get ERC20 balances - only query tokens we need to reduce RPC calls
+    const tokens = ['USDC', 'USDC_E'];
     for (const tokenSymbol of tokens) {
       const address = POLYGON_TOKENS[tokenSymbol as SupportedToken];
       const contract = new Contract(address, ERC20_ABI, this.provider);
@@ -479,7 +479,6 @@ export class SwapService {
           decimals,
         });
       } catch (err) {
-        // Log which token failed and why
         console.warn(`SwapService: Failed to get ${tokenSymbol} balance: ${(err as Error).message}`);
       }
     }
@@ -722,7 +721,7 @@ export class SwapService {
     address: string,
     provider?: ethers.providers.Provider
   ): Promise<TokenBalance[]> {
-    const rpcProvider = provider || new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+    const rpcProvider = provider || new ethers.providers.JsonRpcProvider('https://rpc.ankr.com/polygon');
     const balances: TokenBalance[] = [];
 
     // Get native MATIC balance
@@ -764,7 +763,7 @@ export class SwapService {
     token: string,
     provider?: ethers.providers.Provider
   ): Promise<string> {
-    const rpcProvider = provider || new ethers.providers.JsonRpcProvider('https://polygon-rpc.com');
+    const rpcProvider = provider || new ethers.providers.JsonRpcProvider('https://rpc.ankr.com/polygon');
     const upperToken = token.toUpperCase();
 
     if (upperToken === 'MATIC') {
