@@ -36,15 +36,14 @@ if (!globalThis.crypto.subtle && (crypto as any).webcrypto) {
 // ============================================================================
 // PROXY SUPPORT (Fix for Cloudflare blocking on Railway/cloud hosts)
 // ============================================================================
-// Set PROXY_URL in Railway env vars, e.g.:
-//   PROXY_URL=http://username:password@host:port
-// Bright Data format: http://brd-customer-XXXX-zone-XXXX:password@brd.superproxy.io:22225
+// Reads from HTTPS_PROXY, HTTP_PROXY, or PROXY_URL env vars
+// Bright Data format: http://brd-customer-XXXX-zone-XXXX:password@brd.superproxy.io:33335
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import http from 'node:http';
 import https from 'node:https';
 
-if (process.env.PROXY_URL) {
-  const proxyUrl = process.env.PROXY_URL;
+const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.PROXY_URL;
+if (proxyUrl) {
   const agent = new HttpsProxyAgent(proxyUrl);
 
   // Override default http/https agents globally so ALL requests use the proxy
