@@ -632,19 +632,17 @@ async function setupDipArb(sdk: PolymarketSDK) {
   log('ARB', 'Setting up DipArb Service...');
 
   // Configure the DipArb service
-  // v4.1: More aggressive thresholds for REST polling (3s intervals)
-  // Default dipThreshold=0.15 (15%) is too strict for polling - lower to 5%
+  // v4.2: Even more aggressive for REST polling - 2% threshold for frequent trades
   sdk.dipArb.updateConfig({
     shares: CONFIG.dipArb.shares,
-    sumTarget: CONFIG.dipArb.sumTarget,
-    autoExecute: !CONFIG.dryRun,
-    debug: true,
-    dipThreshold: 0.05,       // 5% dip triggers signal (was 15%)
-    surgeThreshold: 0.05,     // 5% surge triggers signal (was 15%)
+    autoExecute: !CONFIG.dryRun && CONFIG.dipArb.autoExecute,
+    dipThreshold: 0.02,       // 2% dip triggers signal (was 5%)
+    surgeThreshold: 0.02,     // 2% surge triggers signal (was 5%)
     enableSurge: true,        // Enable surge detection
     slidingWindowMs: 6000,    // 6s window (2 poll cycles) for comparison
-    windowMinutes: 10,        // Allow signals up to 10min into round (was 2min)
-    minProfitRate: 0.01,      // 1% min profit (was 3%)
+    windowMinutes: 10,        // Allow signals up to 10min into round
+    minProfitRate: 0.01,      // 1% min profit
+    debug: true,              // Enable debug logging to see signal detection
   });
 
   // Event handlers - listen to orderbookUpdate for live orderbook data
