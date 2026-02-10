@@ -100,8 +100,8 @@ let CONFIG = {
 
   arbitrage: {
     enabled: process.env.ARBITRAGE_ENABLED === 'true',
-    // 🔴 FIXED: Higher profit threshold for gas fees
-    profitThreshold: 0.01,  // Up from 0.001 to 1%
+    // v4.1: Lowered to catch more opportunities
+    profitThreshold: 0.005,  // 0.5% profit threshold
     minTradeSize: 20,  // Up from 5 to reduce gas impact
     maxTradeSize: 100,  // Up from 50
     minVolume24h: 5000,
@@ -611,11 +611,19 @@ async function setupDipArb(sdk: PolymarketSDK) {
   log('ARB', 'Setting up DipArb Service...');
 
   // Configure the DipArb service
+  // v4.1: More aggressive thresholds for REST polling (3s intervals)
+  // Default dipThreshold=0.15 (15%) is too strict for polling - lower to 5%
   sdk.dipArb.updateConfig({
     shares: CONFIG.dipArb.shares,
     sumTarget: CONFIG.dipArb.sumTarget,
     autoExecute: !CONFIG.dryRun,
     debug: true,
+    dipThreshold: 0.05,       // 5% dip triggers signal (was 15%)
+    surgeThreshold: 0.05,     // 5% surge triggers signal (was 15%)
+    enableSurge: true,        // Enable surge detection
+    slidingWindowMs: 6000,    // 6s window (2 poll cycles) for comparison
+    windowMinutes: 10,        // Allow signals up to 10min into round (was 2min)
+    minProfitRate: 0.01,      // 1% min profit (was 3%)
   });
 
   // Event handlers - listen to orderbookUpdate for live orderbook data
